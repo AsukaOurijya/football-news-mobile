@@ -1,5 +1,11 @@
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
+import 'package:football_news/screens/menu.dart';
+import 'package:football_news/utils/api_constants.dart';
 import 'package:football_news/widgets/left_drawer.dart';
+import 'package:pbp_django_auth/pbp_django_auth.dart';
+import 'package:provider/provider.dart';
 
 class NewsFormPage extends StatefulWidget {
   const NewsFormPage({super.key});
@@ -37,7 +43,7 @@ class _NewsFormPageState extends State<NewsFormPage> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-
+    final request = context.watch<CookieRequest>();
     return Scaffold(
       appBar: AppBar(
         title: const Text('Add News Form'),
@@ -156,7 +162,7 @@ class _NewsFormPageState extends State<NewsFormPage> {
                       padding: const EdgeInsets.symmetric(vertical: 14),
                       textStyle: theme.textTheme.labelLarge,
                     ),
-                    onPressed: _handleSubmit,
+                    onPressed: () => _handleSubmit(request),
                     child: const Text('Simpan'),
                   ),
                 ),
@@ -168,55 +174,58 @@ class _NewsFormPageState extends State<NewsFormPage> {
     );
   }
 
-  void _handleSubmit() {
+  Future<void> _handleSubmit(CookieRequest request) async {
     if (!_formKey.currentState!.validate()) return;
+    if (!request.loggedIn) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Please login before adding news.')),
+      );
+      return;
+    }
 
-    final preview = _NewsPreview(
-      title: _titleController.text.trim(),
-      content: _contentController.text.trim(),
-      category: _selectedCategory,
-      thumbnail: _thumbnailController.text.trim(),
-      isFeatured: _isFeatured,
-    );
+    final payload = {
+      "title": _titleController.text.trim(),
+      "content": _contentController.text.trim(),
+      "category": _selectedCategory,
+      "thumbnail": _thumbnailController.text.trim(),
+      "is_featured": _isFeatured,
+    };
 
-    showDialog<void>(
-      context: context,
-      builder: (dialogContext) {
-        return AlertDialog(
-          title: const Text('Berita berhasil tersimpan'),
-          content: SingleChildScrollView(
-            child: ListBody(
-              children: [
-                Text('Judul: ${preview.title}'),
-                Text('Isi: ${preview.content}'),
-                Text('Kategori: ${preview.category}'),
-                Text(
-                  'Thumbnail: ${preview.thumbnail.isEmpty ? 'Tidak ada' : preview.thumbnail}',
-                ),
-                Text('Unggulan: ${preview.isFeatured ? 'Ya' : 'Tidak'}'),
-              ],
+    try {
+      final response = await request.postJson(
+        '$baseUrl/create-flutter/',
+        jsonEncode(payload),
+      );
+
+      if (!mounted) return;
+
+      if (response['status'] == 'success') {
+        _resetForm();
+        ScaffoldMessenger.of(context)
+          ..hideCurrentSnackBar()
+          ..showSnackBar(
+            const SnackBar(
+              content: Text('Berita berhasil disimpan.'),
             ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () {
-                Navigator.of(dialogContext).pop();
-                _resetForm();
-                ScaffoldMessenger.of(context)
-                  ..hideCurrentSnackBar()
-                  ..showSnackBar(
-                    const SnackBar(
-                      content: Text('Berita telah disimpan.'),
-                      duration: Duration(seconds: 2),
-                    ),
-                  );
-              },
-              child: const Text('OK'),
-            ),
-          ],
+          );
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(builder: (context) => const MyHomePage()),
         );
-      },
-    );
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(response['message'] ?? 'Gagal menyimpan berita.'),
+          ),
+        );
+      }
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Terjadi kesalahan: $error')),
+      );
+    }
   }
 
   void _resetForm() {
@@ -229,20 +238,4 @@ class _NewsFormPageState extends State<NewsFormPage> {
     _contentController.clear();
     _thumbnailController.clear();
   }
-}
-
-class _NewsPreview {
-  const _NewsPreview({
-    required this.title,
-    required this.content,
-    required this.category,
-    required this.thumbnail,
-    required this.isFeatured,
-  });
-
-  final String title;
-  final String content;
-  final String category;
-  final String thumbnail;
-  final bool isFeatured;
 }
